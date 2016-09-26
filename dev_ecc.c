@@ -223,7 +223,7 @@ static int eccEncDec(DEVHANDLE hDev)
     memcpy(enc_pri.PrivateKey + sizeof (enc_pri.PrivateKey) - sizeof (bEccPrikey),
             bEccPrikey, sizeof (bEccPrikey));
 
-    cip = malloc(sizeof (ECCCIPHERBLOB)) + inLen;
+    cip = malloc(sizeof (ECCCIPHERBLOB) + inLen);
     if (!cip) {
         ERROR_MSG("malloc cip ERROR\n");
         goto error;
@@ -242,7 +242,7 @@ static int eccEncDec(DEVHANDLE hDev)
         goto error;
     }
 
-    if (decLen != inLen || memcpy(in, dec, inLen)) {
+    if (decLen != inLen || memcmp(in, dec, inLen)) {
         ERROR_MSG("ecc plain text && dec text compare ERROR\n");
         DEBUG_MSG("plain text:\n");
         ShwHexBuf(in, inLen);
