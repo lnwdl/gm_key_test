@@ -4,6 +4,9 @@
  */
 #include <string.h>
 #include <stdlib.h>
+#ifdef USE_CRYPTO
+#include <openssl/rsa.h>
+#endif
 #include <sdkey.h>
 
 #define CON_NAME    "con_rsa"
@@ -59,11 +62,18 @@ static int importEncKeyPair(DEVHANDLE hDev, HCONTAINER hCon)
 {
     ULONG rv, keyLen, padLen, encLen, cipLen, len, algId;
     RSAPUBLICKEYBLOB sign_pub;
-    RSAPRIVATEKEYBLOB enc_pri;
     BLOCKCIPHERPARAM param;
     HANDLE hKey = NULL;
     BYTE key[16] = {0};
     BYTE enc[4096], cip[4096];
+#ifdef USE_CRYPTO
+    BIGNUM *bn = NULL;
+    RSA *rsa = NULL;
+    unsigned char *der = NULL;
+    int dlen;
+#else
+    RSAPRIVATEKEYBLOB enc_pri;
+#endif
     char *pad = NULL;
     int ret = 0;
 
@@ -106,11 +116,40 @@ static int importEncKeyPair(DEVHANDLE hDev, HCONTAINER hCon)
 
     /************************************************/
     //generate a random rsa private key
+#ifdef USE_CRYPTO
+    bn = BN_new();
+    if (!bn) {
+        ERROR_MSG("BN_new ERROR\n");
+        goto error;
+    }
+    if (!BN_set_word(bn, RSA_F4)) {
+        ERROR_MSG("BN_set_word ERROR\n");
+        goto error;
+    }
+    rsa = RSA_new();
+    if (!rsa) {
+        ERROR_MSG("RSA_new ERROR\n");
+        goto error;
+    }
+    if (!RSA_generate_key_ex(rsa, sign_pub.BitLen, bn, NULL)) {
+        ERROR_MSG("RSA_generate_key_ex ERROR\n");
+        goto error;
+    }
+    dlen = i2d_RSAPrivateKey(rsa, &der);
+    if (dlen <= 0) {
+        ERROR_MSG("i2d_RSAPrivateKey ERROR\n");
+        goto error;
+    }
+#else
     rv = SKF_GenExtRSAKey(hDev, sign_pub.BitLen, &enc_pri);
     if (rv != SAR_OK) {
         ERROR_MSG("SKF_GenExtRSAKey ERROR, errno[0x%08x]\n", rv);
         goto error;
     }
+
+    /* TODO: der encode the enc_pri */
+#error "You need to der encode the enc_pri"
+#endif
 
     // use cipher key to encrypt the private key to cipher text */
     algId = SGD_SM1_ECB;
@@ -129,8 +168,12 @@ static int importEncKeyPair(DEVHANDLE hDev, HCONTAINER hCon)
     }
 
     cipLen = sizeof (cip) / sizeof (BYTE);
+#ifdef USE_CRYPTO
+    rv = SKF_Encrypt(hKey, der, dlen, cip, &cipLen);
+#else
     rv = SKF_Encrypt(hKey, (BYTE *)&enc_pri, sizeof (enc_pri),
             cip, &cipLen);
+#endif
     if (rv != SAR_OK) {
         ERROR_MSG("SKF_Encrypt ERROR, errno[0x%08x]\n", rv);
         goto error;
@@ -146,6 +189,11 @@ static int importEncKeyPair(DEVHANDLE hDev, HCONTAINER hCon)
 
     ret = 1;
 error:
+#ifdef USE_CRYPTO
+    if (bn) BN_free(bn);
+    if (rsa) RSA_free(rsa);
+    if (der) OPENSSL_free(der);
+#endif
     if (pad) free(pad);
     if (hKey) SKF_CloseHandle(hKey);
 

@@ -2,7 +2,7 @@
 # All rights reserved.
 #
 CC = gcc
-ifeq (1, 0)
+ifeq (1, 1)
 CFLAG = -c -g -DUSE_CRYPTO
 LD_FILE = -lskf -lcrypto
 else
